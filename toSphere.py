@@ -15,12 +15,15 @@ def getEquirectangularVideo(path="360DegreeVideo/Zoo1.mp4"):
 
 def buildRays(view_w,view_h,fov):
     aspect = view_w/view_h
+
+    #compute pixel coordinates in camera space scaled to -1,1, projected to view plane at z=1
     xs = (2*(np.arange(view_w) + .5)/view_w - 1)*aspect*math.tan(fov/2)
     ys = (1-2*(np.arange(view_h)+.5)/view_h)*math.tan(fov/2)
     xv,yv = np.meshgrid(xs,ys)
     zv = np.ones_like(xv)
     rays = np.stack([xv,yv,zv],axis=-1)
     rays /= np.linalg.norm(rays,axis=-1,keepdims=True)
+    #for each output pixel, return ray direction x,y,z from center
     return rays.astype(np.float32)
 
 def rotation_matrix(yaw,pitch):
@@ -28,9 +31,11 @@ def rotation_matrix(yaw,pitch):
     cp, sp = math.cos(pitch), math.sin(pitch)
     Ry = np.array([[cy,0,sy],[0,1,0],[-sy,0,cy]])
     Rx = np.array([[1,0,0],[0,cp,-sp],[0,sp,cp]])
+    #returned as matrix mult of yaw rotation Ry and pitch rotation Rx
     return Ry @ Rx
 
 def raysToEquirect(rays, W, H):
+    #converts ray direction to latitude and longitude then to u,v coordinates
     x, y, z = rays[...,0], rays[...,1], rays[...,2]
     lat = np.arcsin(np.clip(y,-1,1))
     lon = np.arctan2(z,x)
@@ -48,12 +53,14 @@ def readFrame(cap):
 def main():
     step = 0.5
     yaw,pitch = 0,0
+    #loads base mp4 video file
     cap = getEquirectangularVideo()
     
     if not cap.isOpened():
         print("Failed to open video. Exiting.")
         return
     
+    #normalized ray direction represting pixel output of viewport
     rays = buildRays(VIEW_W,VIEW_H,fov)
     while True:
         frame = readFrame(cap)
@@ -79,6 +86,8 @@ def main():
         H,W = frame.shape[:2]
         mapX,mapY = raysToEquirect(rotatedRays,W,H)
 
+        #for each pixel, map it to pixel in the equirectangular 
+        #using bilinear interpolation for non-integer mappings
         view = cv2.remap(frame, mapX, mapY, interpolation=cv2.INTER_LINEAR)
         cv2.imshow("View",view)
     cap.release()
